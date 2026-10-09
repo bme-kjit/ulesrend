@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>ZH ülésrend</title>
+<style>
+  :root { color-scheme: light only; --bg: #f6f7f9; --fg: #1a1c1f; --muted: #6b7078; --card: #fff; --line: #d6d9de; --accent: #1f5fbf; --err: #b3261e; --szek: #e4e7eb; --szek-szam: #1f2328; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+         background: var(--bg); color: var(--fg); font: 17px/1.4 system-ui, -apple-system, sans-serif; }
+  main { width: 100%; max-width: 520px; background: var(--card); border: 1px solid var(--line);
+         border-radius: 16px; padding: 28px 24px; text-align: center; }
+  h1 { font-size: 1.25rem; margin: 0 0 20px; }
+  label { display: block; color: var(--muted); margin-bottom: 8px; }
+  input { width: 100%; font: 600 2rem/1 ui-monospace, Menlo, monospace; letter-spacing: .25em; text-align: center;
+          text-transform: uppercase; padding: 14px 8px; border: 2px solid var(--line); border-radius: 12px;
+          background: transparent; color: var(--fg); }
+  input:focus { outline: none; border-color: var(--accent); }
+  button { width: 100%; margin-top: 12px; padding: 14px; font: 600 1.1rem system-ui, sans-serif; border: 0;
+           border-radius: 12px; background: var(--accent); color: var(--card); cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  .hely { margin-top: 24px; }
+  .hely .terem { font-size: 1.1rem; color: var(--muted); }
+  .hely .terem b { color: var(--fg); font-size: 1.6rem; }
+  .hely .szek { font-size: 5rem; font-weight: 700; line-height: 1; margin-top: 8px; }
+  .hely .szek small { display: block; font-size: 1rem; font-weight: 400; color: var(--muted); }
+  .hiba { margin-top: 20px; color: var(--err); }
+  .sor { margin-top: 6px; color: var(--muted); }
+  .terkep { width: 100%; height: auto; margin-top: 20px; }
+  .terkep g rect { fill: var(--szek); }
+  .terkep g text { fill: var(--szek-szam); }
+  .terkep .sorszam { fill: var(--muted); opacity: .6; }
+  .terkep .inaktiv path { stroke: var(--szek-szam); }
+  .terkep .itt rect { fill: var(--accent); }
+  .terkep .itt text { fill: var(--card); font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="cim">ZH ülésrend</h1>
+  <form id="urlap" hidden>
+    <label for="neptun">Neptun-kód</label>
+    <input id="neptun" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" autofocus>
+    <button id="gomb" disabled>Hol ülök?</button>
+  </form>
+  <div id="eredmeny"></div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const zh = new URLSearchParams(location.search).get("zh") || "";
+  let adat;
+
+  function hiba(szoveg) { $("eredmeny").innerHTML = `<p class="hiba">${szoveg}</p>`; }
+
+  async function hashKod(salt, kod) {
+    const bajtok = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${kod}`));
+    return [...new Uint8Array(bajtok)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+  }
+
+  $("neptun").addEventListener("input", (e) => {
+    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    $("gomb").disabled = e.target.value.length !== 6;
+    $("eredmeny").innerHTML = "";
+  });
+
+  $("urlap").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const kod = $("neptun").value;
+    const hely = adat.helyek[await hashKod(adat.salt, kod)];
+    if (!hely) return hiba(`A(z) <b>${kod}</b> kód nem szerepel a listán.<br>Jelentkezz a felügyelőnél.`);
+    const [terem, szek] = hely;
+    const div = document.createElement("div");
+    div.className = "hely";
+    div.innerHTML = `<div class="terem">Terem: <b></b></div><div class="szek"><small>Szék</small></div>`;
+    div.querySelector("b").textContent = terem;
+    div.querySelector(".szek").append(String(szek));
+    const terkep = adat.terkepek?.[terem];
+    if (terkep) {
+      div.insertAdjacentHTML("beforeend", terkep);
+      const g = div.querySelector(`[data-szek="${szek}"]`);
+      if (g) {
+        g.classList.add("itt");
+        const sor = document.createElement("div");
+        sor.className = "sor";
+        sor.textContent = `${g.dataset.sor}. sor elölről (a táblától számolva)`;
+        div.querySelector(".szek").after(sor);
+      }
+    }
+    $("eredmeny").replaceChildren(div);
+    $("neptun").blur();
+  });
+
+  if (!/^[a-z0-9_-]+$/.test(zh)) {
+    hiba("Hiányzó vagy hibás ZH azonosító. Olvasd be újra a QR kódot.");
+  } else {
+    fetch(`zh/${zh}.json`, { cache: "no-store" })
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d) => {
+        adat = d;
+        $("cim").textContent = d.cim;
+        document.title = d.cim;
+        $("urlap").hidden = false;
+        $("neptun").focus();
+      })
+      .catch(() => hiba("Ehhez a ZH-hoz még nincs ülésrend."));
+  }
+</script>
+</body>
+</html>

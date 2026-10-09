@@ -1,0 +1,44 @@
+name: Oldal
+
+on:
+  repository_dispatch:
+    types: [beosztas]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: oldal
+  cancel-in-progress: false
+
+jobs:
+  oldal:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.kozzetesz.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: github.event_name == 'repository_dispatch'
+        env:
+          UZENET: ${{ toJSON(github.event.client_payload) }}
+          ZH: ${{ github.event.client_payload.zh }}
+          TEREM: ${{ github.event.client_payload.terem }}
+        run: |
+          node beepit.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add zh
+          git commit -m "Beosztás: $ZH, $TEREM"
+          git push
+      - run: mkdir -p zh _site && cp -r index.html zh _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: kozzetesz
+        uses: actions/deploy-pages@v4
