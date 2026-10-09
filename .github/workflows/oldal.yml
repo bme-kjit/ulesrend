@@ -11,30 +11,48 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: oldal
-  cancel-in-progress: false
-
 jobs:
-  oldal:
+  # Egy terem beosztását beírja a zh/<zh>.json fájlba. Több terem egyszerre is érkezhet, ezért nincs concurrency:
+  # ha a push nem sikerül, mert közben egy másik terem beosztása bekerült, a lépés újra olvassa a repót, és újra próbálja.
+  beir:
+    if: github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          UZENET: ${{ toJSON(github.event.client_payload) }}
+          ZH: ${{ github.event.client_payload.zh }}
+          TEREM: ${{ github.event.client_payload.terem }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3 4 5 6; do
+            git fetch origin main
+            git reset --hard origin/main
+            node beepit.mjs
+            git add zh
+            git diff --cached --quiet || git commit -m "Beosztás: $ZH, $TEREM"
+            git push origin HEAD:main && exit 0
+            sleep $((RANDOM % 10 + 2))
+          done
+          exit 1
+
+  # A concurrency egy közzétételt enged egyszerre. A GitHub a várakozó közzétételek közül csak a legutolsót tartja meg,
+  # de ez a main legfrissebb állapotát teszi közzé, így minden terem beosztása benne van.
+  kozzetesz:
+    needs: beir
+    if: ${{ !cancelled() && needs.beir.result != 'failure' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: oldal
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.kozzetesz.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - if: github.event_name == 'repository_dispatch'
-        env:
-          UZENET: ${{ toJSON(github.event.client_payload) }}
-          ZH: ${{ github.event.client_payload.zh }}
-          TEREM: ${{ github.event.client_payload.terem }}
-        run: |
-          node beepit.mjs
-          git config user.name "github-actions[bot]"
-          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add zh
-          git commit -m "Beosztás: $ZH, $TEREM"
-          git push
+        with:
+          ref: main
       - run: mkdir -p zh _site && cp -r index.html zh _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

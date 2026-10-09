@@ -164,8 +164,6 @@ function beepit(regi, u) {
       hiba(`Hib\xE1s hash: ${hash}`);
     if (!letezo.has(szek))
       hiba(`${u.terem}: nincs ${szek}. sz\xE9k.`);
-    if (adat.helyek[hash])
-      hiba(`Egy hallgat\xF3 k\xE9t teremben is szerepel: ${adat.helyek[hash][0]}, ${u.terem}.`);
     adat.helyek[hash] = [u.terem, szek];
   }
   adat.cim = u.cim;
